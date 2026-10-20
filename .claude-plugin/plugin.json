@@ -1,11 +1,23 @@
 {
   "name": "claude-crew",
   "version": "0.4.0",
-  "description": "File-based task lifecycle + multi-agent collision prevention for Claude Code.",
+  "description": "Prevent parallel sessions in Claude Code from editing the same files. Runs task batches in separate git worktrees and blocks writes into zones locked by another session with a PreToolUse hook. Tasks are markdown files (TODO > CURRENT_TASKS > HISTORIQUE). Python stdlib, no server, no database. MIT.",
   "author": {
     "name": "Nakken13",
     "url": "https://github.com/Nakken13"
   },
   "license": "MIT",
-  "homepage": "https://github.com/Nakken13/claude-crew"
+  "homepage": "https://github.com/Nakken13/claude-crew",
+  "repository": "https://github.com/Nakken13/claude-crew",
+  "keywords": [
+    "claude-code",
+    "claude-code-plugin",
+    "parallel-sessions",
+    "git-worktree",
+    "pretooluse-hook",
+    "collision-prevention",
+    "multi-agent",
+    "task-management",
+    "markdown"
+  ]
 }

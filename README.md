@@ -2,12 +2,12 @@
 
 <img src="./media/Claude-crew-logo.png" alt="claude-crew logo" width="260" />
 
-# 🗂️ claude-crew
+# claude-crew: stop parallel Claude Code sessions from editing the same files
 
-**File-based task lifecycle + multi-agent collision prevention for Claude Code.**
+claude-crew is a Claude Code plugin that keeps parallel sessions from editing the same files: each task batch runs in its own git worktree, and a PreToolUse hook rejects writes into a zone locked by another session. It also tracks tasks as markdown files that move between folders (TODO, CURRENT_TASKS, HISTORIQUE), so a new session can see what is done and in progress, and you can install it with [three commands](#-quick-start), with no server or database.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](./LICENSE)
-[![Dependencies: none](https://img.shields.io/badge/dependencies-none-brightgreen.svg)](#-whats-in-the-box)
+[![Hooks: stdlib only](https://img.shields.io/badge/hooks-stdlib%20only-brightgreen.svg)](#-whats-in-the-box)
 [![Built for Claude Code](https://img.shields.io/badge/built%20for-Claude%20Code-5A45FF.svg)](https://github.com/anthropics/claude-code)
 
 **[Quick start](#-quick-start)** · **[How it works](#-how-it-works)** ·
@@ -19,12 +19,21 @@
 ---
 
 > [!TIP]
-> Claude Code forgets everything between sessions. Run two instances on the
-> same repo and they'll happily edit the same files at the same time, with no
-> warning. `claude-crew` fixes both — with markdown files and two stdlib-only
-> Python hooks. No server, no DB (the web dashboard is optional).
+> Claude Code does not carry task state from one session to the next unless you
+> write it down. Run two instances on the same repo and nothing warns you when
+> they edit the same files at the same time. `claude-crew` addresses both with
+> markdown files and two stdlib-only Python hooks. No server, no DB (the web
+> dashboard is optional).
 >
-> **Install in one command, working in five minutes, nothing to host.**
+> **Three commands to install, nothing to host.**
+
+> [!NOTE]
+> **Not to be confused with.** Other, unrelated projects use the name claude-crew:
+> - [d-kimuson/claude-crew](https://github.com/d-kimuson/claude-crew): a CLI tool for Claude Desktop.
+> - [@nbonamy/claude-crew](https://www.npmjs.com/package/@nbonamy/claude-crew) (npm): agent-to-agent communication over MCP.
+> - [matthewrsj/claude-crew](https://github.com/matthewrsj/claude-crew): review and test sub-agents.
+>
+> This repository, `Nakken13/claude-crew`, is a Claude Code plugin for task lifecycle and collision prevention between parallel sessions. It does not use MCP. Independent project, not affiliated with Anthropic or with the projects above.
 
 <br>
 
@@ -34,9 +43,6 @@
 |---|---|
 | 🧠 **Session amnesia** | Every new Claude Code session starts blind: what's done, what's half-done, why a decision was made — gone unless you paste it back in yourself. |
 | 💥 **Multi-agent collisions** | Parallelizing Claude Code (one instance per workstream) is the obvious way to go faster. It's also the fastest way to get two agents editing the same file at the same time, silently. |
-
-> [!TIP]
-> Recognize either of these? A ⭐ on [`claude-crew`](https://github.com/Nakken13/claude-crew) helps other people hitting the same wall find it.
 
 <br>
 
@@ -65,22 +71,21 @@ its entire history.
 
 ## 🎯 The actual differentiator: batching
 
-Plenty of scaffolds give you a prompt template and a folder layout. What
-`claude-crew` adds is tracking *which files each task touches* (its "zone"),
-grouping tasks that share a zone into the same batch, and **preventing** —
-not just flagging — a collision when a batch's zone overlaps an **active**
-batch it doesn't belong to. Two layers, not one:
+On top of the folder layout, `claude-crew` tracks *which files each task
+touches* (its "zone"), groups tasks that share a zone into the same batch,
+and **blocks** — not just flags — a write when a batch's zone overlaps an
+**active** batch it doesn't belong to. Two layers, not one:
 
 - **Layer 1 — physical isolation.** Each active batch runs in its own `git
   worktree` (`../<repo>-batch-<slug>/`, sibling of the main checkout) on its
   own branch (`crew/batch-<slug>`). Two Claude Code instances on two
-  different batches are never pointed at the same working tree, so a raw
-  filesystem collision between them is structurally impossible, not just
-  discouraged.
-- **Layer 2 — a blocking gate.** A `PreToolUse` hook intercepts every
-  `Edit`/`Write`/`MultiEdit` call and every mutating `Bash` command
-  (`rm`/`mv`/`cp`/output redirection/`git mv`) and **rejects it (`exit 2`)
-  before it runs** if the path it touches falls under a `Zone:` already
+  different batches work in different working trees, so they do not share
+  files on disk (this assumes each session is started in its own batch
+  worktree).
+- **Layer 2 — a blocking gate.** A `PreToolUse` hook intercepts
+  `Edit`/`Write`/`MultiEdit` calls and mutating `Bash` commands matching
+  `rm`/`mv`/`cp`/output redirection/`git mv`, and **rejects them (`exit 2`)
+  before they run** if the path they touch falls under a `Zone:` already
   locked by a *different* session. The lock itself is registered
   preventively at the moment a task moves `TODO → CURRENT_TASKS` — including
   when that `git mv` is run from inside a batch worktree rather than the
@@ -90,8 +95,8 @@ batch it doesn't belong to. Two layers, not one:
 The `PreToolUse` hook only spawns Python when it can matter: a shell pre-filter
 skips it unless `crew/CLAUDE_CONTEXT/.gate_armed` exists (maintained by the lock
 writer, present only while ≥ 2 sessions hold locks) or the `Bash` call is a claim
-(`git mv` into `CURRENT_TASKS/`, `crew-resume:`). Solo sessions pay ~40 ms instead
-of ~270 ms per `Edit`/`Write`. Set `CREW_HOOK_PROFILE=minimal` to disable the
+(`git mv` into `CURRENT_TASKS/`, `crew-resume:`), so solo sessions skip the
+Python start-up cost on `Edit`/`Write`. Set `CREW_HOOK_PROFILE=minimal` to disable the
 `PreToolUse` gate entirely (`Stop`/`SessionEnd` keep syncing indexes and locks).
 
 A `SessionStart` hook (`startup|resume|compact`) injects a read-only crew digest (≤ 2000 chars:
@@ -107,8 +112,8 @@ the same file.
 
 > [!IMPORTANT]
 > You catch the collision **before** you point a second Claude Code instance
-> at the same code — and if you somehow don't, the write itself gets
-> refused instead of silently landing.
+> at the same code — and if you don't, the write is refused when the gate is
+> armed and the call matches a guarded pattern.
 
 ```
 🟢 Batch A — Zone: frontend/checkout/**   [worktree ../repo-batch-a/, branch crew/batch-a]
@@ -116,9 +121,9 @@ the same file.
 🔴 Batch C — Zone: frontend/checkout/**   <-- overlaps Batch A, write blocked (exit 2) before it happens
 ```
 
-This is the part that matters once you're running more than one agent — the
-folder lifecycle alone is a nice-to-have, the worktree isolation + blocking
-gate is what actually keeps parallel Claude Code instances from stepping on
+This is the part that matters once you're running more than one agent: the
+folder lifecycle works on its own, and the worktree isolation plus the
+blocking gate is what keeps parallel Claude Code instances from stepping on
 each other's files.
 
 <br>
@@ -128,13 +133,12 @@ each other's files.
 | Piece | What it does |
 |---|---|
 | 🗂️ `crew/` | The task lifecycle folders (`PROBLEMS`/`TODO`/`CURRENT_TASKS`/`TESTS`/`CLAUDE_CONTEXT`/`ICEBOX`) |
-| 🌳 Per-batch `git worktree` | Physical isolation — each active batch gets its own checkout (`../<repo>-batch-<slug>/`) and branch (`crew/batch-<slug>`), so parallel Claude Code instances can never share a working tree |
+| 🌳 Per-batch `git worktree` | Physical isolation — each active batch gets its own checkout (`../<repo>-batch-<slug>/`) and branch (`crew/batch-<slug>`), so parallel Claude Code instances do not share a working tree |
 | 🪝 `crew_hook.py` | Two hooks in one file: `PreToolUse` blocks (`exit 2`) any `Edit`/`Write`/`MultiEdit`/mutating `Bash` into a zone locked by another session, and registers that lock preventively on `git mv`; `Stop` regenerates `INDEX.md`/`BATCH_LOCKS.md` and re-checks overlaps as a fallback |
 | 🪝 `spec_to_task_hook.py` | Runs on file writes — keeps specs and tasks in sync |
 | ⚡ `/crew-init` | Bootstraps the whole scaffold onto a project, resolves every `<placeholder>`, fails loud if one is left unresolved |
 | ⚡ `/crew-new-task` `/crew-close-task` `/crew-status` | Run the lifecycle + batching instead of doing it by hand every time |
 | 🎭 `.claude/agents/ceo.md` `manager.md` `comms.md` `architect.md` `designer.md` `legal.md` `social.md` `seo.md` | Subagent personas routed by decision type — business/priority calls, task breakdown, user-facing copy, structural tech choices, UX/retention/spec decisions, legal exposure, organic social distribution, and search/store/AI-answer discoverability don't get answered by the same voice that writes your diff |
-| 🎭 `.claude/agents/ceo.md` `manager.md` `comms.md` `architect.md` `legal.md` | Subagent personas routed by decision type — business/priority calls, task breakdown, user-facing copy, structural tech choices, and legal risk (FR + international, framed as business trade-offs) don't get answered by the same voice that writes your diff |
 | 📖 `CLAUDE.md` / `AGENTS.md` | Skill routing + context-efficiency rules (no reading 2000-line files whole) wired into Claude Code from day one |
 
 Everything is plain markdown + JSON state — readable, greppable, diffable in
@@ -284,6 +288,33 @@ one of four statuses before anything is written:
 Your `crew/` task data is never modified. See
 [Updating an existing project](#-updating-an-existing-project) for what each
 status means.
+
+<br>
+
+## ❓ FAQ
+
+### How do I stop two Claude Code sessions from editing the same file?
+
+Run each batch in its own git worktree (`crew/batch-<slug>` branch). When a
+task moves from `TODO` to `CURRENT_TASKS`, the session locks the batch's
+`Zone:`, and the `PreToolUse` hook rejects (`exit 2`) `Edit`/`Write`/`MultiEdit`
+and mutating `Bash` commands (`rm`/`mv`/`cp`/redirections/`git mv`) from another
+session that touch it. The gate is armed only while at least two sessions hold
+locks, and `CREW_HOOK_PROFILE=minimal` turns it off.
+
+### How do I keep task state between Claude Code sessions?
+
+A task is a markdown file and its state is the folder it is in (`TODO`,
+`CURRENT_TASKS`); finished work goes to `crew/CLAUDE_CONTEXT/HISTORIQUE.md`. A
+`SessionStart` hook (`startup|resume|compact`) injects a digest of up to 2000
+characters: active and paused tasks, active batches, other sessions' locks, the
+last 3 history entries. `CREW_SESSION_DIGEST=off` disables it.
+
+### Does it need a server or a database?
+
+No. The hooks are stdlib-only Python scripts and the state is markdown and JSON
+files in your repo. The local web dashboard is optional: it listens on
+`127.0.0.1` and installs its own requirements in a venv on first run.
 
 <br>
 

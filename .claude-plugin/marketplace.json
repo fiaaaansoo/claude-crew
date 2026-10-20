@@ -8,7 +8,10 @@
     {
       "name": "claude-crew",
       "source": ".",
-      "description": "File-based task lifecycle + multi-agent collision prevention for Claude Code."
+      "description": "Prevent parallel sessions in Claude Code from editing the same files. Runs task batches in separate git worktrees and blocks writes into zones locked by another session with a PreToolUse hook. Tasks are markdown files (TODO > CURRENT_TASKS > HISTORIQUE). Python stdlib, no server, no database. MIT."
     }
-  ]
+  ],
+  "metadata": {
+    "description": "Prevent parallel sessions in Claude Code from editing the same files. Runs task batches in separate git worktrees and blocks writes into zones locked by another session with a PreToolUse hook. Tasks are markdown files (TODO > CURRENT_TASKS > HISTORIQUE). Python stdlib, no server, no database. MIT."
+  }
 }
