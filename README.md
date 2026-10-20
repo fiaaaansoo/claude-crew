@@ -10,7 +10,7 @@
 [![Hooks: stdlib only](https://img.shields.io/badge/hooks-stdlib%20only-brightgreen.svg)](#whats-in-the-box)
 [![Built for Claude Code](https://img.shields.io/badge/built%20for-Claude%20Code-5A45FF.svg)](https://github.com/anthropics/claude-code)
 
-[Quick start](#quick-start) · [How it works](#how-it-works) · [Batching](#batching) · [What's in the box](#whats-in-the-box) · [FAQ](#faq)
+[Quick start](#quick-start) · [How it works](#how-it-works) · [Batching](#batching) · [Who it's for](#who-its-for) · [What's in the box](#whats-in-the-box) · [FAQ](#faq)
 
 </div>
 
@@ -24,19 +24,28 @@ claude-crew is a Claude Code plugin. Each task batch runs in its own git worktre
 /crew-init
 ```
 
-With three batches and two active sessions, this is what you see:
+<p align="center"><img src="./media/demo.gif" alt="Terminal replay: session A claims the checkout batch, session B claims the payments batch and edits a payments file, then session B tries to edit and delete a checkout file and the hook blocks both with exit 2." width="860"></p>
 
-```
-Batch A  Zone: frontend/checkout/**   worktree ../repo-batch-a/  branch crew/batch-a   active
-Batch B  Zone: backend/payments/**    worktree ../repo-batch-b/  branch crew/batch-b   active
-Batch C  Zone: frontend/checkout/**   overlaps Batch A: write blocked (exit 2)
-```
+Two sessions, two batches. Session B works in its own zone, then tries to edit and delete a file in session A's zone, and the hook blocks both. The animation replays the captured output of the real `PreToolUse` command from `hooks/hooks.json`, run against a throwaway repo. The gate messages are in French, as the hook prints them.
 
 ## The problem
 
 Task state disappears between sessions. A new Claude Code session does not know what is done, what is half done, or why you made a decision, unless you paste it back in.
 
 Parallel sessions collide. Running one instance per workstream is the obvious way to go faster, and nothing warns you when two of them edit the same file.
+
+## Who it's for
+
+Use it if:
+
+- you run more than one Claude Code session on the same repo, one per workstream;
+- you want tasks, decisions and test checklists to live in the repo as files you can diff and review in a PR;
+- you want a new session to start knowing what is in progress, without you pasting context.
+
+Skip it if:
+
+- you work solo, with one Claude Code session on a small script. This is overhead you do not need yet;
+- you want a hosted task board with a UI. claude-crew is local-first and files-only, with no service to run.
 
 ## How it works
 
@@ -117,9 +126,26 @@ Open `your-project` in Claude Code and run `/crew-init`. Use this if you do not 
 
 Whichever option you pick, `/crew-init` detects your stack, fills every `<placeholder>` with the real repo information, and keeps failing (`check_placeholders.py`) until none is left. The full steps are in [`CLAUDE.md`](./CLAUDE.md).
 
-Four commands drive day-to-day work:
+### Your first task
+
+After `/crew-init`, describe a task in plain language and say where it goes:
+
+```text
+/crew-new-task Add retry with backoff to failed card charges. It touches backend/payments/ and its tests. Put it in the backlog.
+```
+
+claude-crew writes the task file with checkable actions, files it in a batch with its zone, and lists it in `crew/TODO/`. Create a second task the same way for another area, for example `frontend/checkout/`. Then run this in two terminals:
+
+```text
+/crew-start
+```
+
+Each session picks a batch no other session holds and works in that batch's worktree. When the code is done, `/crew-close-task` checks the boxes, logs the work in `HISTORIQUE.md` and moves the test checklists out.
+
+### Day-to-day commands
 
 - `/crew-new-task` creates a task and files it in a batch.
+- `/crew-start` resumes the task in progress, or starts a batch no other session holds.
 - `/crew-close-task` closes a finished task: checks, history, tests moved out.
 - `/crew-status` prints a read-only report of active batches, overlaps and orphaned tasks.
 - `/crew-update` pulls engine-file changes into a project that is already set up.
@@ -189,11 +215,6 @@ A task is a markdown file and its state is the folder it is in (`TODO`, `CURRENT
 ### Does it need a server or a database?
 
 No. The hooks are stdlib-only Python scripts and the state is markdown and JSON files in your repo. The local web dashboard is optional: it listens on `127.0.0.1` and installs its own requirements in a venv on first run.
-
-## Not for you if
-
-- You work solo, with one Claude Code session on a small script. This is overhead you do not need yet.
-- You want a hosted task board with a UI. claude-crew is local-first and files-only, with no service to run.
 
 ## Contributing
 
