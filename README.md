@@ -24,9 +24,15 @@ claude-crew is a Claude Code plugin. Each task batch runs in its own git worktre
 /crew-init
 ```
 
-<p align="center"><img src="./media/demo.gif" alt="Terminal replay: session A claims the checkout batch, session B claims the payments batch and edits a payments file, then session B tries to edit and delete a checkout file and the hook blocks both with exit 2." width="860"></p>
+## See it run
 
-Two sessions, two batches. Session B works in its own zone, then tries to edit and delete a file in session A's zone, and the hook blocks both. The animation replays the captured output of the real `PreToolUse` command from `hooks/hooks.json`, run against a throwaway repo. The gate messages are in French, as the hook prints them.
+Two Claude Code sessions in the same repo. Session A plans two tasks and starts one; session B starts the other, in a different zone.
+
+<p align="center"><img src="./media/demo-flow.png" alt="Two terminals side by side. Session A plans two tasks with /crew-new-task, then starts the checkout batch with /crew-start. Session B starts the payments batch. A final git worktree list shows main, crew/batch-a and crew/batch-b." width="890"></p>
+
+Session A plans two tasks with `/crew-new-task` and starts one batch with `/crew-start`. Session B runs `/crew-start` and takes the other batch, in its own git worktree.
+
+This is a real recording of two Claude Code sessions on a small demo repo, rendered from the terminal output. The model is Haiku, the run took about 2 minutes and idle time is cut. The recording script typed the prompts, the plan commit and the final `git worktree list`, and accepted 4 permission prompts for read-only commands and git. The title and the blue banner are overlays. The demo project asks for English replies, but the plugin's skills are written in French, so some task names come out in French. Your output will differ.
 
 ## The problem
 
@@ -128,13 +134,19 @@ Whichever option you pick, `/crew-init` detects your stack, fills every `<placeh
 
 ### Your first task
 
-After `/crew-init`, describe a task in plain language and say where it goes:
+After `/crew-init`, describe your tasks in plain language and say where they go:
 
 ```text
-/crew-new-task Add retry with backoff to failed card charges. It touches backend/payments/ and its tests. Put it in the backlog.
+/crew-new-task Two tasks for the backlog. 1) Show the cart items as a numbered list in frontend/checkout/cart.html. 2) Retry failed card charges with backoff in backend/payments/retry.py. Don't start them.
 ```
 
-claude-crew writes the task file with checkable actions, files it in a batch with its zone, and lists it in `crew/TODO/`. Create a second task the same way for another area, for example `frontend/checkout/`. Then run this in two terminals:
+claude-crew hands this to the `manager` agent, which writes one task file per item with checkable actions and files each one in a batch with its zone (`crew/CLAUDE_BATCH.md`). Commit the plan: each batch runs in a worktree created from `main`, which only contains committed files.
+
+```bash
+git add -A && git commit -m "Plan the two tasks"
+```
+
+Then run this in two terminals:
 
 ```text
 /crew-start
